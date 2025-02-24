@@ -14,7 +14,13 @@ This repository contains the implementation of a hybrid Transformer-BiLSTM-CRF m
 - Supports multiple transformer backbones like BERT, RoBERTa, DistilBERT, DeBERTa, and ALBERT.
 - Optimized for detecting subtle transitions between human and AI-generated text.
 
-### Model Architecture
+### Datasets
+- **Human ChatGPT Comparison Corpus (HC3-English)**: Human and machine-generated responses from various domains.
+- **M4GT-Bench Task 3 Dataset**: Multidomain dataset containing ChatGPT and LLaMA-generated texts.
+- Datasets are available in the following drive link: [Google Drive Link](<https://drive.google.com/drive/folders/1_de-VwGj5mJNruBWbiXtwSX4tqsKPnW4?usp=sharing>)
+
+  
+### Models Architecture
 ```python
 class TransformerBiLSTMCRF(nn.Module):
     def __init__(self, transformer_model, hidden_dim, num_labels):
@@ -44,9 +50,83 @@ class TransformerBiLSTMCRF(nn.Module):
             predictions = self.crf.decode(emissions, mask=attention_mask.bool())
             return predictions
 ```
-### Datasets
-- **Human ChatGPT Comparison Corpus (HC3-English)**: Human and machine-generated responses from various domains.
-- **M4GT-Bench Task 3 Dataset**: Multidomain dataset containing ChatGPT and LLaMA-generated texts.
+```python
+class TransformerCRF(nn.Module):
+    def __init__(self, model_name, num_labels):
+        super(TransformerTaggerCRF, self).__init__()
+        self.num_labels = num_labels
+        self.transformer = AutoModel.from_pretrained(model_name)
+        self.dropout = nn.Dropout(0.1)
+        hidden_size = self.transformer.config.hidden_size
+        self.classifier = nn.Linear(hidden_size, num_labels)
+        nn.init.xavier_uniform_(self.classifier.weight)
+        nn.init.constant_(self.classifier.bias, 0)
+        self.crf = CRF(num_labels, batch_first=True)
+
+    def forward(self, input_ids, attention_mask, labels=None):
+        outputs = self.transformer(input_ids, attention_mask=attention_mask)
+        sequence_output = self.dropout(outputs.last_hidden_state)
+        logits = self.classifier(sequence_output)
+
+        if labels is not None:
+            mask = attention_mask.bool()
+            crf_labels = labels.clone()
+            crf_labels[crf_labels == -100] = 0
+            loss = -self.crf(logits, crf_labels, mask=mask, reduction='mean')
+            return loss
+        else:
+            mask = attention_mask.bool()
+            predictions = self.crf.decode(logits, mask=mask)
+            return torch.tensor(predictions)
+```
+```python
+
+class RNNCRFTagger(nn.Module):
+    def __init__(self, input_dim, hidden_dim, num_labels, embedding_dim=768, num_layers=2, dropout=0.3):
+        super(RNNCRFTagger, self).__init__()
+        self.num_labels = num_labels
+        self.embedding = nn.Embedding(input_dim, embedding_dim)
+        self.embed_dropout = nn.Dropout(dropout)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=num_layers, batch_first=True, bidirectional=True, dropout=dropout if num_layers > 1 else 0)
+        self.layer_norm = nn.LayerNorm(hidden_dim * 2)
+        self.hidden2hidden = nn.Sequential(nn.Linear(hidden_dim * 2, hidden_dim * 2), nn.ReLU(), nn.Dropout(dropout))
+        self.hidden2tag = nn.Linear(hidden_dim * 2, num_labels)
+        self.crf = CRF(num_labels, batch_first=True)
+        for name, param in self.named_parameters():
+            if 'weight' in name:
+                if len(param.shape) > 1:
+                    nn.init.xavier_uniform_(param)
+                else:
+                    nn.init.normal_(param, mean=0, std=0.01)
+            elif 'bias' in name:
+                nn.init.constant_(param, 0)
+
+    def forward(self, input_ids, attention_mask, labels=None):
+        embedded = self.embedding(input_ids)
+        embedded = self.embed_dropout(embedded)
+        embedded = embedded * attention_mask.unsqueeze(-1)
+        lstm_out, _ = self.lstm(embedded)
+        lstm_out = self.layer_norm(lstm_out)
+        lstm_out = self.hidden2hidden(lstm_out)
+        logits = self.hidden2tag(lstm_out)
+
+        if labels is not None:
+            mask = attention_mask.bool()
+            crf_labels = labels.clone()
+            crf_labels[crf_labels == -100] = 0
+            loss = -self.crf(logits, crf_labels, mask=mask, reduction='mean')
+            return loss
+        else:
+            mask = attention_mask.bool()
+            predictions = self.crf.decode(logits, mask=mask)
+            padded_predictions = []
+            for pred, mask_len in zip(predictions, attention_mask.sum(1).tolist()):
+                pad_len = attention_mask.size(1) - len(pred)
+                padded_pred = pred + [0] * pad_len
+                padded_predictions.append(padded_pred)
+            return torch.tensor(padded_predictions, device=input_ids.device)
+```
+
 
 ### Results
 - **M4GT Dataset:** ALBERT-BiLSTM-CRF achieved the best performance with an MAE below 10.
