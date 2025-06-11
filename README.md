@@ -15,7 +15,7 @@ This repository contains the implementation of a hybrid Transformer-NN-CRF model
 - Optimized for detecting subtle transitions between human and AI-generated text.
 
 ### Datasets
-- **AAAI Dataset**: Dataset from the paper *Detecting AI-Generated Sentences in Human-AI Collaborative Hybrid Texts: Challenges, Strategies, and Insights* [Paper Link](<https://arxiv.org/abs/2403.03506>)
+- **AAAI Dataset**: Dataset from the paper *Towards Automatic Boundary Detection for Human-AI Collaborative Hybrid Essay in Education* [Paper Link (<https://arxiv.org/abs/2307.12267>)
 - **M4GT-Bench Task 3 Dataset**: Multidomain dataset containing ChatGPT and LLaMA-generated texts.
 - **Human ChatGPT Comparison Corpus (HC3-English)**: Human and machine-generated responses from various domains.
 - Datasets are available in the following drive link: [Google Drive Link](<https://drive.google.com/drive/folders/1_de-VwGj5mJNruBWbiXtwSX4tqsKPnW4?usp=sharing>)
